@@ -2,7 +2,7 @@ name: Scanner 7 Move Alert
 
 on:
   schedule:
-    - cron: "*/10 3-18 * * *"      # 8:30 AM - ~midnight IST, every 10 min
+    - cron: "*/5 3-18 * * *"      # 8:30 AM - ~midnight IST, every 10 min
     - cron: "*/30 0-2,19-23 * * *" # off-hours (crypto), every 30 min
   workflow_dispatch:
     inputs:
