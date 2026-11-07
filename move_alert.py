@@ -44,6 +44,9 @@ LATE_X = 1.5             # already 1.5 ATR away when alert is sent = late
 LOOKBACK_BARS = 3        # re-check last 3 bars (GitHub cron can be late)
 MAX_STALE_MIN = 20       # skip instrument if latest candle is older (market closed)
 ACTIVE_MAX_HOURS = 12
+BREAKOUT_BUFFER_X = 0.25  # close must clear the channel by >= 0.25 ATR (kills marginal breakouts)
+FAIL_BUFFER_X = 0.5       # move 'failed' only if price goes 0.5 ATR back THROUGH the level (retests are normal)
+MIN_EXTRAS_VOL = 2        # futures/crypto need 2 confirmers (MEDIUM alerts removed)
 
 # name, yahoo symbol, kind  (index = no volume + session based; fut/crypto use volume)
 # NOTE: crude/natgas/gold/silver use international futures as a direction proxy for MCX.
@@ -166,6 +169,9 @@ def find_events(name, kind, df):
             direction = "DOWN"
         else:
             continue
+        clear = (close - hi) if direction == "UP" else (lo - close)
+        if clear < BREAKOUT_BUFFER_X * float(atr):
+            continue
         prev_close = float(df["Close"].iloc[pos - 1])
         if not (lo <= prev_close <= hi):      # only the FIRST close outside the channel
             continue
@@ -186,7 +192,7 @@ def find_events(name, kind, df):
             vol_ok = volx >= VOLUME_X
         trend_ok = (close > row["ema50"]) if direction == "UP" else (close < row["ema50"])
         extras = int(squeeze) + int(vol_ok) + int(bool(trend_ok))
-        if extras < 1:
+        if extras < (MIN_EXTRAS_VOL if use_vol else 1):
             continue
         out.append({
             "name": name, "kind": kind, "dir": direction,
@@ -268,7 +274,8 @@ def process(name, kind, df, st, now_utc):
             s["active"] = None
     if act:
         up = act["dir"] == "UP"
-        failed = price < act["level"] if up else price > act["level"]
+        buf = FAIL_BUFFER_X * act["atr"]
+        failed = price < act["level"] - buf if up else price > act["level"] + buf
         if failed:
             send(msg_failed(name, act, price))
             s["active"] = None
