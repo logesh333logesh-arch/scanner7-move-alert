@@ -46,7 +46,7 @@ MAX_STALE_MIN = 20       # skip instrument if latest candle is older (market clo
 ACTIVE_MAX_HOURS = 12
 BREAKOUT_BUFFER_X = 0.25  # close must clear the channel by >= 0.25 ATR (kills marginal breakouts)
 FAIL_BUFFER_X = 0.5       # move 'failed' only if price goes 0.5 ATR back THROUGH the level (retests are normal)
-MIN_EXTRAS_VOL = 2        # futures/crypto need 2 confirmers (MEDIUM alerts removed)
+REQUIRE_VOLUME = True     # futures/crypto: volume spike is mandatory (index has no volume data)
 
 # name, yahoo symbol, kind  (index = no volume + session based; fut/crypto use volume)
 # NOTE: crude/natgas/gold/silver use international futures as a direction proxy for MCX.
@@ -158,6 +158,8 @@ def find_events(name, kind, df):
         atr = row["atr"]
         if pd.isna(atr) or atr <= 0:
             continue
+        base = row["base"]
+        ref = max(float(atr), float(base)) if not pd.isna(base) else float(atr)
         ch = channel(df, pos, session)
         if ch is None:
             continue
@@ -170,13 +172,13 @@ def find_events(name, kind, df):
         else:
             continue
         clear = (close - hi) if direction == "UP" else (lo - close)
-        if clear < BREAKOUT_BUFFER_X * float(atr):
+        if clear < BREAKOUT_BUFFER_X * ref:
             continue
         prev_close = float(df["Close"].iloc[pos - 1])
         if not (lo <= prev_close <= hi):      # only the FIRST close outside the channel
             continue
         rng = float(row["High"] - row["Low"])
-        if rng <= 0 or rng < EXPANSION_X * atr:
+        if rng <= 0 or rng < EXPANSION_X * ref:
             continue
         pos_in_bar = (close - float(row["Low"])) / rng
         if direction == "UP" and pos_in_bar < STRONG_CLOSE:
@@ -192,13 +194,15 @@ def find_events(name, kind, df):
             vol_ok = volx >= VOLUME_X
         trend_ok = (close > row["ema50"]) if direction == "UP" else (close < row["ema50"])
         extras = int(squeeze) + int(vol_ok) + int(bool(trend_ok))
-        if extras < (MIN_EXTRAS_VOL if use_vol else 1):
+        if use_vol and REQUIRE_VOLUME and not vol_ok:
+            continue
+        if extras < 1:
             continue
         out.append({
             "name": name, "kind": kind, "dir": direction,
             "bar": df.index[pos].isoformat(),
             "level": hi if direction == "UP" else lo,
-            "close": close, "atr": float(atr), "exp": rng / float(atr),
+            "close": close, "atr": ref, "exp": rng / ref,
             "bar_high": float(row["High"]), "bar_low": float(row["Low"]),
             "squeeze": squeeze, "volx": volx, "vol_ok": vol_ok, "trend_ok": bool(trend_ok),
             "extras": extras,
