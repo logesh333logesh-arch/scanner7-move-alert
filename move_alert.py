@@ -46,6 +46,9 @@ MAX_STALE_MIN = 20       # skip instrument if latest candle is older (market clo
 ACTIVE_MAX_HOURS = 12
 BREAKOUT_BUFFER_X = 0.25  # close must clear the channel by >= 0.25 ATR (kills marginal breakouts)
 FAIL_BUFFER_X = 0.5       # move 'failed' only if price goes 0.5 ATR back THROUGH the level (retests are normal)
+INDEX_LAST_ENTRY = (15, 0)  # indices: no new MOVE START alerts after 3:00 PM IST (market closes 3:30)
+BIG_CANDLE_X = 6.0        # candle bigger than this x ATR gets a 'verify on chart' warning (data glitch / closing-auction spike)
+MIN_EXTRAS_INDEX = 2      # indices have no volume data: need BOTH squeeze and EMA50 trend
 REQUIRE_VOLUME = True     # futures/crypto: volume spike is mandatory (index has no volume data)
 
 # name, yahoo symbol, kind  (index = no volume + session based; fut/crypto use volume)
@@ -155,6 +158,9 @@ def find_events(name, kind, df):
     n = len(df)
     for pos in range(max(n - LOOKBACK_BARS, BASE_N + 1), n):
         row = df.iloc[pos]
+        ts = df.index[pos]
+        if session and (ts.hour, ts.minute) >= INDEX_LAST_ENTRY:
+            continue
         atr = row["atr"]
         if pd.isna(atr) or atr <= 0:
             continue
@@ -196,7 +202,7 @@ def find_events(name, kind, df):
         extras = int(squeeze) + int(vol_ok) + int(bool(trend_ok))
         if use_vol and REQUIRE_VOLUME and not vol_ok:
             continue
-        if extras < 1:
+        if extras < (1 if use_vol else MIN_EXTRAS_INDEX):
             continue
         out.append({
             "name": name, "kind": kind, "dir": direction,
@@ -236,6 +242,8 @@ def msg_start(ev, price):
         lines.append(f"✅ Volume: {ev['volx']:.1f}× average")
     if ev["trend_ok"]:
         lines.append("✅ Trend (EMA50) ஒத்துப்போகுது")
+    if ev["exp"] > BIG_CANDLE_X:
+        lines.append(f"⚠️ Candle ரொம்ப பெரிசு ({ev['exp']:.0f}× ATR) — chart-ல உண்மையான மூவான்னு சரிபாருங்க")
     stop = ev["bar_low"] if up else ev["bar_high"]
     lines.append(f"🛑 Stop idea: {stop:,.2f}")
     dist = ((price - ev["level"]) if up else (ev["level"] - price)) / ev["atr"]
@@ -247,18 +255,27 @@ def msg_start(ev, price):
     return "\n".join(lines)
 
 
+def from_entry(act, price):
+    entry, stop = act.get("entry"), act.get("stop")
+    if entry is None or stop is None or entry == stop:
+        return ""
+    up = act["dir"] == "UP"
+    r = ((price - entry) if up else (entry - price)) / abs(entry - stop)
+    return f"\n📊 Alert price ({entry:,.2f})-ல இருந்து: {r:+.1f}R"
+
+
 def msg_extended(name, act, price):
     mult = abs(price - act["level"]) / act["atr"]
     return (f"🔥 MOVE EXTENDED — {name}\n"
             f"{mult:.1f}× ATR ஓடிடுச்சு (price {price:,.2f}).\n"
             "❌ புதுசா entry போடாதீங்க — துரத்துனா தப்பான இடம்.\n"
-            "✅ ஏற்கனவே trade இருந்தா profit lock / trail பண்ணுங்க.")
+            "✅ ஏற்கனவே trade இருந்தா profit lock / trail பண்ணுங்க." + from_entry(act, price))
 
 
 def msg_failed(name, act, price):
     return (f"⚠️ MOVE FAILED / முடிஞ்சது — {name}\n"
             f"Price ({price:,.2f}) breakout level ({act['level']:,.2f}) க்கு திரும்பி வந்துடுச்சு.\n"
-            "Sideways ஆகலாம் — புது entry வேண்டாம், அடுத்த alert-க்கு காத்திருங்க.")
+            "Sideways ஆகலாம் — புது entry வேண்டாம், அடுத்த alert-க்கு காத்திருங்க." + from_entry(act, price))
 
 
 # ---------------- main ----------------
@@ -299,7 +316,9 @@ def process(name, kind, df, st, now_utc):
         if act and act["dir"] == ev["dir"]:
             continue  # same move continuing - alert only once per move
         send(msg_start(ev, price))
+        stop = ev["bar_low"] if ev["dir"] == "UP" else ev["bar_high"]
         act = {"dir": ev["dir"], "level": ev["level"], "atr": ev["atr"],
+               "entry": price, "stop": stop,
                "started": now_utc.isoformat(), "day": last_day, "ext_sent": False}
         s["active"] = act
     s["seen"] = seen[-20:]
