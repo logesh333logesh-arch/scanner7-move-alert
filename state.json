@@ -89,7 +89,7 @@
    "stop": 3585.5,
    "started": "2026-11-23T01:20:41.767179+00:00",
    "day": "2026-11-23",
-   "ext_sent": false
+   "ext_sent": true
   }
  },
  "SILVER": {
