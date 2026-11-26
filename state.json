@@ -257,7 +257,7 @@
    "stop": 84248.84375,
    "started": "2026-11-26T08:01:03.663333+00:00",
    "day": "2026-11-26",
-   "ext_sent": false
+   "ext_sent": true
   }
  },
  "FINNIFTY": {
