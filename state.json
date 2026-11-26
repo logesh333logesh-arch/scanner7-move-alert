@@ -220,7 +220,7 @@
    "stop": 25887.599609375,
    "started": "2026-11-26T07:45:51.509469+00:00",
    "day": "2026-11-26",
-   "ext_sent": false
+   "ext_sent": true
   }
  },
  "BANKNIFTY": {
