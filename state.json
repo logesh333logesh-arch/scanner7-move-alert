@@ -148,7 +148,7 @@
    "stop": 59476.94921875,
    "started": "2026-11-28T10:10:38.272263+00:00",
    "day": "2026-11-28",
-   "ext_sent": false
+   "ext_sent": true
   }
  },
  "ETHEREUM": {
